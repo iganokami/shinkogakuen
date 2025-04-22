@@ -1,0 +1,206 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>制服ARカメラ</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body {
+      margin: 0;
+      background: #f0f0f0;
+      font-family: sans-serif;
+    }
+    header {
+      background-color: #0A2463;
+      color: white;
+      text-align: center;
+      padding: 1rem;
+      font-size: 1.2rem;
+      font-weight: bold;
+    }
+    #canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      touch-action: none;
+    }
+    #controls {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background-color: rgba(255,255,255,0.9);
+      padding: 10px;
+      border-radius: 12px;
+    }
+    #scaleSlider {
+      width: 200px;
+      margin-bottom: 10px;
+    }
+    #captureBtn {
+      width: 70px;
+      height: 70px;
+      border-radius: 50%;
+      background: white;
+      border: 4px solid #555;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+      margin-top: 10px;
+    }
+    #shareBtn {
+      margin-top: 10px;
+      padding: 6px 12px;
+      background-color: #0A2463;
+      color: white;
+      border: none;
+      border-radius: 6px;
+    }
+    #uniformSelect {
+      padding: 6px;
+      font-size: 14px;
+      margin-bottom: 8px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+    }
+  </style>
+</head>
+<body>
+  <header>神港学園高等学校 AR制服体験</header>
+  <video id="video" autoplay playsinline style="display: none;"></video>
+  <canvas id="canvas"></canvas>
+  <div id="controls">
+    <select id="uniformSelect">
+      <option value="girl.png">女子制服</option>
+      <option value="boy.png">男子制服</option>
+    </select>
+    <input type="range" id="scaleSlider" min="0.5" max="2" step="0.01" value="1" />
+    <button id="captureBtn" title="保存"></button>
+    <button id="shareBtn" title="シェア">シェアする</button>
+  </div>
+
+<script>
+  const video = document.getElementById("video");
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
+  const scaleSlider = document.getElementById("scaleSlider");
+  const captureBtn = document.getElementById("captureBtn");
+  const shareBtn = document.getElementById("shareBtn");
+  const uniformSelect = document.getElementById("uniformSelect");
+
+  let overlayImg = new Image();
+  overlayImg.src = uniformSelect.value;
+
+  let overlayX = 0;
+  let overlayY = 0;
+  let scale = 1;
+  let isDragging = false;
+  let dragOffsetX = 0;
+  let dragOffsetY = 0;
+
+  function centerOverlay() {
+    const imgWidth = overlayImg.width * scale;
+    const imgHeight = overlayImg.height * scale;
+    overlayX = (canvas.width - imgWidth) / 2;
+    overlayY = (canvas.height - imgHeight) / 2;
+  }
+
+  function setupCamera() {
+    navigator.mediaDevices
+      .getUserMedia({ video: { facingMode: "environment" } })
+      .then((stream) => {
+        video.srcObject = stream;
+        video.onloadedmetadata = () => {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          overlayImg.onload = () => {
+            centerOverlay();
+          };
+          draw();
+        };
+      })
+      .catch((err) => {
+        console.error("カメラの使用許可が必要です:", err);
+      });
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    if (overlayImg.complete) {
+      const imgWidth = overlayImg.width * scale;
+      const imgHeight = overlayImg.height * scale;
+      ctx.drawImage(overlayImg, overlayX, overlayY, imgWidth, imgHeight);
+    }
+    requestAnimationFrame(draw);
+  }
+
+  scaleSlider.addEventListener("input", () => {
+    scale = parseFloat(scaleSlider.value);
+  });
+
+  canvas.addEventListener("pointerdown", (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const imgWidth = overlayImg.width * scale;
+    const imgHeight = overlayImg.height * scale;
+    if (x >= overlayX && x <= overlayX + imgWidth && y >= overlayY && y <= overlayY + imgHeight) {
+      isDragging = true;
+      dragOffsetX = x - overlayX;
+      dragOffsetY = y - overlayY;
+    }
+  });
+
+  canvas.addEventListener("pointermove", (e) => {
+    if (isDragging) {
+      const rect = canvas.getBoundingClientRect();
+      overlayX = e.clientX - rect.left - dragOffsetX;
+      overlayY = e.clientY - rect.top - dragOffsetY;
+    }
+  });
+
+  canvas.addEventListener("pointerup", () => isDragging = false);
+  canvas.addEventListener("pointercancel", () => isDragging = false);
+
+  captureBtn.addEventListener("click", () => {
+    const a = document.createElement("a");
+    a.href = canvas.toDataURL("image/png");
+    a.download = "制服ARショット.png";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  });
+
+  shareBtn.addEventListener("click", () => {
+    const dataUrl = canvas.toDataURL("image/png");
+    if (navigator.canShare && navigator.canShare({ files: [] })) {
+      fetch(dataUrl)
+        .then(res => res.blob())
+        .then(blob => {
+          const file = new File([blob], "制服ARショット.png", { type: "image/png" });
+          navigator.share({
+            title: "制服体験ショット",
+            text: "神港学園の制服を試着してみたよ！",
+            files: [file]
+          });
+        });
+    } else {
+      alert("このブラウザでは直接シェア機能は使えません。画像を保存して手動でシェアしてください。");
+    }
+  });
+
+  uniformSelect.addEventListener("change", () => {
+    overlayImg.src = uniformSelect.value;
+    overlayImg.onload = () => {
+      centerOverlay();
+    };
+  });
+
+  setupCamera();
+</script>
+</body>
+</html>
